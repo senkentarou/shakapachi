@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "indentation": {
+    "spaces": 4
+  },
+  "lineLength": 120,
+  "maximumBlankLines": 1,
+  "respectsExistingLineBreaks": true,
+  "indentConditionalCompilationBlocks": true,
+  "indentSwitchCaseLabels": false,
+  "spacesBeforeEndOfLineComments": 2,
+  "rules": {
+    "OrderedImports": true,
+    "DoNotUseSemicolons": true,
+    "NoParensAroundConditions": true,
+    "UseShorthandTypeNames": true,
+    "ReturnVoidInsteadOfEmptyTuple": true,
+    "OneCasePerLine": true,
+    "NoEmptyTrailingClosureParentheses": true
+  }
+}

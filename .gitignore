@@ -1,0 +1,16 @@
+.DS_Store
+/.build
+/dist
+/*.xcodeproj
+xcuserdata/
+DerivedData/
+.swiftpm/
+.claude/worktrees/
+.claude/settings.local.json
+
+# Local ww / orchestrator files (not for publishing)
+CLAUDE.local.md
+.ideal/
+
+# Project instructions for AI agents (kept local, not published)
+CLAUDE.md
