@@ -9,6 +9,8 @@
 "トリガー" = "Trigger";
 "並び順" = "Sort Order";
 "表示単位" = "Display Unit";
+"ホバーで前面化" = "Raise on Hover";
+"カーソルを重ねたまま少し待つと、その窓を前面に出します" = "Rest the pointer on a window and it comes to the front.";
 "動作" = "Behavior";
 "ウィンドウプレビューを表示" = "Show Window Preview";
 "ログイン時に起動" = "Launch at Login";

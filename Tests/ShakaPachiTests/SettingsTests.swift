@@ -87,6 +87,20 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(settings.panelWidth, 480)
     }
 
+    func testDefault_hoverRaiseEnabled_isFalse() {
+        let (_, settings) = makeSuite()
+        XCTAssertFalse(
+            settings.hoverRaiseEnabled,
+            "Hover raise changes what the pointer does system-wide, so it is opt-in")
+    }
+
+    func testRoundTrip_hoverRaiseEnabled() {
+        let (defaults, settings) = makeSuite()
+        settings.hoverRaiseEnabled = true
+        XCTAssertTrue(settings.hoverRaiseEnabled)
+        XCTAssertTrue(defaults.bool(forKey: "hoverRaiseEnabled"))
+    }
+
     // MARK: - TriggerModifier round-trip
 
     func testRoundTrip_triggerModifier_command() {
