@@ -144,32 +144,6 @@ final class WindowStore {
         }
     }
 
-    /// Return the window directly under `point`, and whether it is already the
-    /// frontmost eligible window.
-    ///
-    /// Used by hover-raise, which runs on a poll timer, so this is a single
-    /// CGWindowList query with no MRU bookkeeping — unlike `enumerate`, calling
-    /// it does not disturb the switcher's ordering.
-    ///
-    /// - Parameter point: Cursor position in CGWindowList coordinates
-    ///   (top-left origin), i.e. what `CGEvent.location` returns.
-    /// - Returns: nil when nothing eligible is under the cursor.
-    func window(at point: CGPoint) -> (window: WindowInfo, isFrontmost: Bool)? {
-        guard
-            let rawList = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
-                as? [[String: Any]]
-        else {
-            return nil
-        }
-        return WindowStore.hitTest(
-            rawList: rawList,
-            point: point,
-            selfPID: getpid(),
-            excludedBundleIDs: excludedBundleIDs,
-            bundleIDResolver: { [weak self] pid in self?.resolvedBundleID(for: pid) }
-        )
-    }
-
     /// Record that `windowID` was just activated (switcher confirmed).
     /// Moves the ID to the front of `mruOrder`.
     /// Call this immediately after `Activator.activate()` on `.confirmSelection`.
@@ -451,82 +425,6 @@ final class WindowStore {
 
         // Phase 2: apply duplicate-title suffixes in enumeration order.
         return applyDuplicateSuffixes(to: candidates)
-    }
-
-    /// Find the window under `point` in a raw CGWindowList array.
-    ///
-    /// The decision rests on ONE rule: the topmost visible window covering the
-    /// point must itself be an eligible target. When something else is on top —
-    /// an open menu, the Dock, a Mission Control overlay, a screenshot selection,
-    /// our own panel, the desktop — this returns nil instead of looking
-    /// underneath it. What is on top is what the user is pointing at, and
-    /// raising the window it covers would fight them. That single rule stands in
-    /// for the pile of per-case exclusions this feature would otherwise need.
-    ///
-    /// Eligibility is `windowInfo(from:…)`, the same filter `enumerate` applies,
-    /// so hover-raise can never target a window the switcher would not list.
-    ///
-    /// Pure (no CGWindowList / AppKit call) so it can be unit-tested with
-    /// hand-built fixtures and no TCC permissions.
-    ///
-    /// - Parameters:
-    ///   - rawList: The array returned by CGWindowListCopyWindowInfo, in z-order
-    ///     (index 0 = front).
-    ///   - point: Cursor position in CGWindowList coordinates (top-left origin).
-    ///   - selfPID: The PID of the current process (own-process exclusion).
-    ///   - excludedBundleIDs: Bundle IDs that should be omitted.
-    ///   - bundleIDResolver: Closure that maps a pid_t to an optional bundle ID.
-    /// - Returns: The window under the cursor plus whether it is already the
-    ///   frontmost eligible window, or nil when there is nothing to raise.
-    nonisolated static func hitTest(
-        rawList: [[String: Any]],
-        point: CGPoint,
-        selfPID: pid_t,
-        excludedBundleIDs: Set<String>,
-        bundleIDResolver: (pid_t) -> String?
-    ) -> (window: WindowInfo, isFrontmost: Bool)? {
-
-        var frontmostEligibleID: CGWindowID?
-        var hit: WindowInfo?
-        var hitFound = false
-
-        for dict in rawList {
-            let eligible = windowInfo(
-                from: dict,
-                selfPID: selfPID,
-                excludedBundleIDs: excludedBundleIDs,
-                bundleIDResolver: bundleIDResolver
-            )
-            if frontmostEligibleID == nil, let eligible {
-                frontmostEligibleID = eligible.windowID
-            }
-            if !hitFound, covers(dict: dict, point: point) {
-                // The first visible window over the point decides the outcome,
-                // eligible or not.
-                hitFound = true
-                hit = eligible
-            }
-            if hitFound, frontmostEligibleID != nil { break }
-        }
-
-        guard let hit else { return nil }
-        return (hit, hit.windowID == frontmostEligibleID)
-    }
-
-    /// Whether a raw window dictionary describes a visible window covering `point`.
-    ///
-    /// Visibility is deliberately looser than eligibility: a transparent or
-    /// off-screen-buffer entry is see-through and must not hide the window
-    /// below it, while a visible menu or Dock tile must.
-    nonisolated private static func covers(dict: [String: Any], point: CGPoint) -> Bool {
-        guard let alpha = dict[kCGWindowAlpha as String] as? Double, alpha > 0 else { return false }
-        guard let storeType = dict[kCGWindowStoreType as String] as? Int, storeType != 0 else {
-            return false
-        }
-        guard let boundsDict = dict[kCGWindowBounds as String] as? [String: CGFloat],
-            let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary)
-        else { return false }
-        return bounds.contains(point)
     }
 
     // MARK: - Internal helpers

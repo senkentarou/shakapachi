@@ -298,20 +298,6 @@ struct BehaviorSettingsView: View {
                     .pickerStyle(.menu)
                     .fixedSize()
                 }
-
-                SettingsRowDivider()
-
-                SettingsRow(title: "ホバーで前面化", caption: "カーソルを重ねたまま少し待つと、その窓を前面に出します") {
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { settings.hoverRaiseEnabled },
-                            set: { Settings.shared.hoverRaiseEnabled = $0 }
-                        )
-                    )
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
             }
         }
         .onAppear {
