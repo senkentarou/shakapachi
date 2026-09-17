@@ -124,6 +124,7 @@ flowchart TD
         main["main.swift (NSApplication entry)"]
         AD["AppDelegate (lifecycle + wiring)"]
         SC["SwitchCoordinator (drives one switch cycle)"]
+        HR["HoverRaiser (poll timer, off by default)"]
         SIC["StatusItemController (menu-bar icon + menu)"]
         PM["PermissionManager (AX + Screen Recording)"]
     end
@@ -132,6 +133,7 @@ flowchart TD
         HT["HotkeyTap (CGEventTap)"]
         SG["SafetyGuard (stateless evaluator)"]
         SSM["SwitcherStateMachine (pure state machine)"]
+        HRT["HoverRaiseTracker (pure dwell logic)"]
     end
 
     subgraph Core
@@ -184,6 +186,11 @@ flowchart TD
 
     HT --> SG
 
+    AD --> HR
+    HR --> HRT
+    HR --> WS
+    HR --> ACT
+
     WS --> WI
     WS --> SE
 
@@ -198,8 +205,8 @@ flowchart TD
 ```
 
 The **pure-logic** parts (`SwitcherStateMachine`, `AppGroupedSelection`,
-`SafetyGuard`, `StreakStats`, plus the static helpers inside `WindowStore` /
-`Activator` and the geometry in `SwitcherLayout`) have no AppKit dependency, so
+`SafetyGuard`, `HoverRaiseTracker`, `StreakStats`, plus the static helpers inside
+`WindowStore` / `Activator` and the geometry in `SwitcherLayout`) have no AppKit dependency, so
 they are unit-tested directly without a display connection.
 
 ---
@@ -389,6 +396,67 @@ straight to a visible pane. Digits address panes rather than windows, so their
 meaning moves with the strip; they are deliberately limited to what is on screen.
 An app with a single window has nothing to descend into, so the mode collapses to
 the same panel window-unit mode would have drawn.
+
+---
+
+## Hover raise
+
+`Settings.hoverRaiseEnabled` adds a second way to bring a window forward: rest
+the pointer on it and it is raised. It ships off — this changes what the pointer
+does system-wide — and the setting is a single toggle in the Behavior tab.
+
+**A poll timer, not a second event tap.** `HoverRaiser` samples the cursor every
+100ms. The tap is the switcher's hot path, with a one-millisecond budget and the
+safety machinery in the section below to keep a wedged tap from taking the
+keyboard with it; mouse movement arrives far more often than key events and would
+earn none of that. A tick that finds the cursor inside the frontmost window costs
+one cursor read.
+
+**What decides the target.** `WindowStore.hitTest` walks the same
+`CGWindowListCopyWindowInfo` z-order the switcher enumerates, applying the same
+eligibility filter, and follows one rule: *the topmost visible window over the
+cursor must itself be an eligible target*. When something else is on top — an
+open menu, the Dock, a Mission Control overlay, a screenshot selection, our own
+panel — the tick aborts instead of raising what that thing covers. The user is
+pointing at what is on top. That single rule stands in for the pile of
+per-case exclusions this feature would otherwise need.
+
+**Dwell.** A window is raised only after the cursor has stayed over it for 0.4s,
+so crossing a window on the way somewhere else never disturbs it.
+
+**The keyboard wins until the pointer moves.** Every suppressed tick resets the
+tracker, and after a reset the cursor has to move before anything is raised. The
+case that makes this necessary is a Cmd+Tab confirm with the pointer resting over
+some other window: raising that one 0.4s later would undo the switch the user
+just made.
+
+**When it stands down** (`HoverRaiser.isSuppressed`) — each of these is a way for
+the pointer to be over a window without the user asking for that window:
+
+| Condition | Why |
+|---|---|
+| Accessibility missing | `Activator` cannot raise anything anyway |
+| Switcher panel visible | The user is choosing from the snapshot mid-cycle |
+| ShakaPachi is active | They are in Settings or onboarding |
+| A mouse button is down | Dragging, resizing, or selecting text |
+| Secure input active | Password prompts — the same rule `SafetyGuard` applies to keys |
+| Within 1s of a Space change | The cursor landed on a window nobody chose |
+
+**Cost.** While the cursor sits inside a window that is already frontmost, its
+rectangle is cached and no window list is queried at all — nothing can be above
+the frontmost window, so the cache cannot be wrong. Below the top the rectangle
+is unreliable (another window may overlap it), so the dwell countdown re-queries
+each tick; that is a handful of calls, ending when the window comes forward.
+
+The raise itself goes through `Activator`, the same call the switcher confirms
+with, and is recorded in `WindowStore`'s MRU so the next Cmd+Tab opens on the
+window the user came from. It is deliberately *not* counted by `StatsStore`:
+hover raises land continuously, and the switch counter measures the switcher.
+
+`HoverRaiseTracker` holds the decision — dwell, cache, and the suppression that
+keeps an app which ignores the raise from being asked again every 0.4s — as a
+pure struct that takes its hit test as a closure, so the tests drive it without a
+display and can count how often the hit test really runs.
 
 ---
 
