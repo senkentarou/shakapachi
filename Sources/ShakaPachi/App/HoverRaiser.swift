@@ -99,6 +99,10 @@ final class HoverRaiser {
                 self?.tick()
             }
         }
+        // Let the system coalesce these wakeups with others. Ten wakeups a
+        // second cost more in energy than in CPU, and a tick that lands 25ms
+        // late is invisible against a 400ms dwell.
+        timer.tolerance = HoverRaiser.pollInterval / 4
         self.timer = timer
         NSLog("[ShakaPachi] Hover raise enabled (poll %.0fms)", HoverRaiser.pollInterval * 1000)
     }
