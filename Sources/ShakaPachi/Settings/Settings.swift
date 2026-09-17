@@ -498,7 +498,6 @@ final class Settings: ObservableObject {
         static let appleLanguages = "AppleLanguages"
         static let switcherIconSize = "switcherIconSize"
         static let windowPreviewWidth = "windowPreviewWidth"
-        static let hoverRaiseEnabled = "hoverRaiseEnabled"
     }
 
     // MARK: Init
@@ -525,7 +524,6 @@ final class Settings: ObservableObject {
         _appLanguage = DefaultsEnum(key: Key.appLanguage, defaultValue: .system, defaults: defaults)
         _switcherIconSize = DefaultsInt(key: Key.switcherIconSize, defaultValue: 60, defaults: defaults)
         _windowPreviewWidth = DefaultsInt(key: Key.windowPreviewWidth, defaultValue: 320, defaults: defaults)
-        _hoverRaiseEnabled = DefaultsBool(key: Key.hoverRaiseEnabled, defaultValue: false, defaults: defaults)
 
         // Drive `objectWillChange` from the SAME synchronous `.settingsDidChange`
         // post that every setter already emits, rather than from `@Published`
@@ -638,17 +636,6 @@ final class Settings: ObservableObject {
     var switcherDisplayMode: SwitcherDisplayMode {
         get { _switcherDisplayMode.wrappedValue }
         set { _switcherDisplayMode.wrappedValue = newValue }
-    }
-
-    // -- Hover raise --
-
-    /// When true, the window under the cursor is raised once the cursor has
-    /// rested on it (see HoverRaiser). Default false: this changes what the
-    /// pointer does system-wide, so it is opt-in.
-    private var _hoverRaiseEnabled: DefaultsBool
-    var hoverRaiseEnabled: Bool {
-        get { _hoverRaiseEnabled.wrappedValue }
-        set { _hoverRaiseEnabled.wrappedValue = newValue }
     }
 
     // -- Exclusion --

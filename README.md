@@ -13,7 +13,6 @@ Website: <https://senchan-company.com/en/shakapachi/>
 - Display Unit: *Window* for a flat list, *App* to step between apps and expand one into up to three previews
 - Sort Order: most recently used, by app, or by recently used app
 - Trigger: Command, Option, or Control, with Tab or grave
-- Raise on hover: rest the pointer on a window for 0.4s and it comes to the front (off by default)
 - Menu bar resident, no Dock icon
 - Themes, accent colors, usage stats
 

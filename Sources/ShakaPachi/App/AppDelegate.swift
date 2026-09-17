@@ -34,11 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Created and wired in startTapIfPossible(); see SwitchCoordinator.swift.
     private var switchCoordinator: SwitchCoordinator?
 
-    // Raises the window under the cursor while the setting is on (default off).
-    // Created alongside the coordinator because it raises through the same
-    // Activator and therefore needs the same permission; see HoverRaiser.swift.
-    private var hoverRaiser: HoverRaiser?
-
     // Panel created once at startup, retained forever.
     private var switcherPanel: SwitcherPanel?
 
@@ -308,19 +303,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         hotkeyTap = tap
         tap.enable()
-
-        // Hover raise polls on its own timer, independent of the tap: it cannot
-        // hold the keyboard, so the menu-bar "disable" escape hatch does not
-        // need to cover it. Its own setting is the off switch.
-        let hoverRaiser = HoverRaiser(
-            windowStore: windowStore,
-            activator: activator,
-            isSwitcherVisible: { [weak switcherPanel] in switcherPanel?.isVisible ?? false },
-            isAccessibilityGranted: { [weak self] in
-                self?.permissionManager?.accessibilityStatus() == .granted
-            })
-        self.hoverRaiser = hoverRaiser
-        hoverRaiser.setEnabled(settings.hoverRaiseEnabled)
     }
 
     #if DEBUG
@@ -366,9 +348,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // -- theme → NSApp.appearance --
         applyTheme(settings.theme)
-
-        // -- hoverRaiseEnabled → HoverRaiser (starts/stops the poll timer) --
-        hoverRaiser?.setEnabled(settings.hoverRaiseEnabled)
 
         // currentSpaceOnly and sortMode are read at enumerate() call time (no
         // stored state to update here). showDelayMs is read at show time.
@@ -439,9 +418,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Tear the tap down so modifier keys are not left in a stuck state
         // after the process exits.
         hotkeyTap?.disable(reason: "app terminating")
-
-        // Stop the hover poll and release its workspace observer.
-        hoverRaiser?.setEnabled(false)
 
         // Remove notification observers to avoid delivering to a deallocated delegate.
         if let token = settingsObserver {

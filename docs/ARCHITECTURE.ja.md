@@ -124,7 +124,6 @@ flowchart TD
         main["main.swift (NSApplication entry)"]
         AD["AppDelegate (lifecycle + wiring)"]
         SC["SwitchCoordinator (drives one switch cycle)"]
-        HR["HoverRaiser (poll timer, off by default)"]
         SIC["StatusItemController (menu-bar icon + menu)"]
         PM["PermissionManager (AX + Screen Recording)"]
     end
@@ -133,7 +132,6 @@ flowchart TD
         HT["HotkeyTap (CGEventTap)"]
         SG["SafetyGuard (stateless evaluator)"]
         SSM["SwitcherStateMachine (pure state machine)"]
-        HRT["HoverRaiseTracker (pure dwell logic)"]
     end
 
     subgraph Core
@@ -186,11 +184,6 @@ flowchart TD
 
     HT --> SG
 
-    AD --> HR
-    HR --> HRT
-    HR --> WS
-    HR --> ACT
-
     WS --> WI
     WS --> SE
 
@@ -205,7 +198,7 @@ flowchart TD
 ```
 
 **純ロジック**のパーツ(`SwitcherStateMachine`・`AppGroupedSelection`・`SafetyGuard`・
-`HoverRaiseTracker`・`StreakStats`、加えて `WindowStore` / `Activator` 内の静的ヘルパーと `SwitcherLayout`
+`StreakStats`、加えて `WindowStore` / `Activator` 内の静的ヘルパーと `SwitcherLayout`
 のジオメトリ)は AppKit 依存を持たないため、ディスプレイ接続なしで直接ユニットテスト
 できる。
 
@@ -392,64 +385,6 @@ stateDiagram-v2
 ウィンドウではなくペインなので、ストリップがスライドすると指す先も動く。画面に見えて
 いるものだけを指すよう意図的に限っている。ウィンドウが 1 枚しかないアプリには降りる先が
 無いため、ウィンドウ単位モードが描いたのと同じパネルに収束する。
-
----
-
-## ホバーで前面化
-
-`Settings.hoverRaiseEnabled` は、ウィンドウを前に出す 2 つめの経路を足す。ポインタを
-載せたまま待つとそのウィンドウが前面に来る。ポインタの意味がシステム全体で変わるため
-既定は OFF で、設定は「動作」タブのトグル 1 つ。
-
-**イベントタップではなくポーリング。** `HoverRaiser` はカーソルを 100ms ごとに読む。
-タップは切り替えのホットパスであり、1ms の予算と、次節の安全機構(詰まったタップに
-キーボードを道連れにさせないための仕組み)を抱えている。マウス移動はキーイベントより
-遥かに高頻度で、そこに相乗りしても得るものが無い。カーソルが最前面のウィンドウの中に
-ある tick のコストは、カーソル座標の読み取りだけで済む。
-
-**対象の決め方。** `WindowStore.hitTest` は、切り替えリストの列挙と同じ
-`CGWindowListCopyWindowInfo` の z-order を、同じ適格フィルタを当てながら辿り、規則は
-1 つだけ — *カーソル上で最上位の可視ウィンドウが、それ自体で適格な対象であること*。
-上に何か別のものが乗っていれば — 開いているメニュー、Dock、Mission Control の
-オーバーレイ、スクリーンショットの範囲選択、自分のパネル — その下のウィンドウを
-前に出さずに tick を中止する。ユーザーが指しているのは上に乗っているものだからだ。
-この 1 規則が、本来なら個別に並べることになる除外条件の山を肩代わりする。
-
-**ドウェル。** 同じウィンドウの上にカーソルが 0.4 秒留まって初めて前面化する。
-別の場所へ向かう途中で横切っただけのウィンドウは動かない。
-
-**ポインタが動くまではキーボードが勝つ。** 抑止された tick はトラッカーをリセットし、
-リセット後はカーソルが動くまで何も前面化しない。これが要るのは Cmd+Tab で確定した
-瞬間にポインタが別のウィンドウの上に置かれている場合で、0.4 秒後にそのウィンドウが
-前に出ると、今しがたの切り替えが取り消されてしまうからだ。
-
-**止まる条件**(`HoverRaiser.isSuppressed`) — いずれも「ユーザーがそのウィンドウを
-求めていないのにポインタがその上にある」状況にあたる:
-
-| 条件 | 理由 |
-|---|---|
-| アクセシビリティ未許可 | そもそも `Activator` が前面化できない |
-| 切替パネル表示中 | サイクルの途中でスナップショットから選んでいる |
-| ShakaPachi がアクティブ | 設定やオンボーディングを操作している |
-| マウスボタン押下中 | ドラッグ・リサイズ・テキスト選択の最中 |
-| セキュア入力中 | パスワード入力 — キーに対して `SafetyGuard` が適用するのと同じ規則 |
-| Space 切替から 1 秒以内 | 誰も選んでいないウィンドウの上にカーソルが着地した |
-
-**コスト。** カーソルが既に最前面のウィンドウの中にある間は、その矩形をキャッシュして
-ウィンドウリストを一切引かない — 最前面のウィンドウより上には何も無いので、この
-キャッシュは誤らない。最前面でない場所では矩形が信用できない(別のウィンドウが重なって
-いるかもしれない)ので、ドウェルの計測中は毎 tick 引き直す。数回で終わり、ウィンドウが
-前に出た時点で止まる。
-
-前面化そのものは `Activator`、つまり切り替えの確定と同じ呼び出しを通り、`WindowStore`
-の MRU に記録される。次の Cmd+Tab が直前に居たウィンドウから開くためだ。一方
-`StatsStore` には意図的に計上しない。ホバーでの前面化は連続して起きるものであり、
-切替回数が測っているのは切替リストの利用だからである。
-
-`HoverRaiseTracker` は判断 — ドウェル、キャッシュ、そして前面化を無視するアプリに
-0.4 秒ごとに要求し続けないための抑止 — を純粋な struct として持つ。ヒットテストを
-クロージャで受け取るので、テストはディスプレイ無しで駆動でき、ヒットテストが実際に
-何回走ったかまで数えられる。
 
 ---
 
