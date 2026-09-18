@@ -6,8 +6,8 @@
 //
 // The public CGWindowList API (.optionAll) does not reliably return windows on
 // other Mission Control Spaces and gives no Space attribution. The private
-// CGSCopyManagedDisplaySpaces + CGSCopySpacesForWindows approach is the
-// well-trodden workaround used by AltTab, Hammerspoon, yabai, and others.
+// CGSCopyManagedDisplaySpaces + CGSCopyWindowsWithOptionsAndTags approach is
+// the well-trodden workaround used by AltTab, Hammerspoon, yabai, and others.
 //
 // Every private call is wrapped defensively. Any unexpected/empty return causes
 // this module to return nil so the caller can fall back gracefully — no crash,
@@ -36,17 +36,25 @@ private func CGSMainConnectionID() -> Int32
 @_silgen_name("CGSCopyManagedDisplaySpaces")
 private func CGSCopyManagedDisplaySpaces(_ cid: Int32) -> CFArray?
 
-// CGSCopySpacesForWindows maps an array of CGWindowID values to the Space IDs
-// they belong to. The mask parameter selects which Spaces to consider;
-// 0x7 means "all" (current + other + full-screen per AltTab/Hammerspoon usage).
-// Returns a CFDictionary mapping window ID (CFNumber) → array of space IDs
-// (CFArray of CFNumber), or nil on failure.
-@_silgen_name("CGSCopySpacesForWindows")
-private func CGSCopySpacesForWindows(
+// CGSCopyWindowsWithOptionsAndTags lists the windows that live in the given
+// Spaces. owner 0 means every process and options 2 means every window of those
+// Spaces; the two tag masks are in/out parameters this call does not need, so
+// they are passed empty. Returns a CFArray of CFNumber (window IDs), or nil on
+// failure.
+//
+// Note the direction: this asks the Spaces for their windows. The sibling call
+// CGSCopySpacesForWindows goes the other way and returns the Space IDs the given
+// windows occupy — a flat CFArray, not a per-window mapping — which is why it
+// cannot answer "does this window belong to a managed Space".
+@_silgen_name("CGSCopyWindowsWithOptionsAndTags")
+private func CGSCopyWindowsWithOptionsAndTags(
     _ cid: Int32,
-    _ mask: Int32,
-    _ windowIDs: CFArray
-) -> CFDictionary?
+    _ owner: Int32,
+    _ spaces: CFArray,
+    _ options: Int32,
+    _ setTags: UnsafeMutablePointer<Int>,
+    _ clearTags: UnsafeMutablePointer<Int>
+) -> CFArray?
 
 // MARK: - SpacesEnumerator
 
@@ -64,13 +72,12 @@ enum SpacesEnumerator {
     ///
     /// Algorithm:
     /// 1. Get all managed Space IDs from CGSCopyManagedDisplaySpaces.
-    /// 2. Get all on-screen+off-screen window IDs from CGWindowList (.optionAll).
-    /// 3. Ask CGSCopySpacesForWindows which of those IDs belong to a managed Space.
-    /// 4. Return the union of matching window IDs.
+    /// 2. Ask CGSCopyWindowsWithOptionsAndTags which windows live in them.
     ///
-    /// CGSCopySpacesForWindows naturally filters out transient system compositing
-    /// buffers, off-Space ghosts, and other CGWindowList artefacts that have no
-    /// Space attribution — those simply do not appear in the returned dictionary.
+    /// Asking the Spaces for their windows, rather than asking a window list for
+    /// its Spaces, is what makes the result a filter: transient compositing
+    /// buffers, off-Space ghosts and other CGWindowList artefacts belong to no
+    /// managed Space, so they are simply absent from the answer.
     nonisolated static func allSpaceWindowIDs() -> Set<CGWindowID>? {
         let cid = CGSMainConnectionID()
 
@@ -82,39 +89,10 @@ enum SpacesEnumerator {
             return nil
         }
 
-        // Enumerate ALL window IDs via the public API.
-        guard let allWindowIDs = collectAllWindowIDs(),
-            !allWindowIDs.isEmpty
-        else {
-            NSLog("[ShakaPachi] SpacesEnumerator: fallback – CGWindowListCopyWindowInfo " + "returned no windows")
-            return nil
-        }
-
-        // Map window IDs to Space IDs via the private API.
-        guard
-            let windowToSpaces = windowSpaceMap(
-                cid: cid,
-                windowIDs: allWindowIDs
-            )
-        else {
-            NSLog("[ShakaPachi] SpacesEnumerator: fallback – CGSCopySpacesForWindows failed")
-            return nil
-        }
-
-        // Keep only window IDs that map to at least one managed Space.
-        // This discards off-Space compositing artefacts and system-only windows.
-        let managedSet = managedSpaceIDs
-        var result: Set<CGWindowID> = []
-        for (windowID, spaceIDs) in windowToSpaces {
-            if spaceIDs.contains(where: { managedSet.contains($0) }) {
-                result.insert(windowID)
-            }
-        }
-
-        if result.isEmpty {
+        // Ask those Spaces for their windows.
+        guard let result = windowIDs(cid: cid, inSpaces: managedSpaceIDs) else {
             NSLog(
-                "[ShakaPachi] SpacesEnumerator: fallback – intersection of all-windows "
-                    + "and managed-Spaces yielded no windows")
+                "[ShakaPachi] SpacesEnumerator: fallback – CGSCopyWindowsWithOptionsAndTags " + "returned no windows")
             return nil
         }
 
@@ -174,71 +152,48 @@ enum SpacesEnumerator {
         return spaceIDs.isEmpty ? nil : spaceIDs
     }
 
-    /// Return all CGWindowIDs visible via CGWindowList .optionAll (on all Spaces,
-    /// including minimized, off-screen, etc.). Returns nil on failure.
-    private nonisolated static func collectAllWindowIDs() -> [CGWindowID]? {
-        guard
-            let rawList = CGWindowListCopyWindowInfo(
-                .optionAll, kCGNullWindowID
-            ) as? [[String: Any]]
-        else {
-            return nil
-        }
-        let ids: [CGWindowID] = rawList.compactMap { dict in
-            dict[kCGWindowNumber as String] as? CGWindowID
-        }
-        return ids.isEmpty ? nil : ids
-    }
-
-    /// Ask CGSCopySpacesForWindows which Spaces each window ID belongs to.
-    /// Returns a dictionary mapping CGWindowID → [Space IDs], or nil on failure.
-    private nonisolated static func windowSpaceMap(
+    /// Ask CGSCopyWindowsWithOptionsAndTags for every window ID living in the
+    /// given Spaces. Returns nil on failure or an empty answer.
+    private nonisolated static func windowIDs(
         cid: Int32,
-        windowIDs: [CGWindowID]
-    ) -> [CGWindowID: [Int]]? {
-        // Build a CFArray of CFNumber from the window IDs.
-        // Use sInt64Type so IDs above Int32.max (0x7FFF_FFFF) are not sign-flipped.
-        let cfNumbers = windowIDs.map { id in
+        inSpaces spaceIDs: Set<Int>
+    ) -> Set<CGWindowID>? {
+        // Build a CFArray of CFNumber from the Space IDs.
+        // Use sInt64Type because a Space ID is the 64-bit "id64" value.
+        let cfNumbers = spaceIDs.map { id in
             var val = Int64(id)
             return CFNumberCreate(kCFAllocatorDefault, .sInt64Type, &val)
                 as CFNumber? ?? 0 as CFNumber
         }
-        // Use NSArray bridging to create the CFArray.
-        let cfArray = cfNumbers as CFArray
 
-        // mask 0x7 = kCGSAllSpacesMask (current | others | fullscreen).
-        guard let resultCF = CGSCopySpacesForWindows(cid, 0x7, cfArray) else {
+        // The tag masks are in/out parameters this call does not need.
+        var setTags = 0
+        var clearTags = 0
+        guard
+            let resultCF = CGSCopyWindowsWithOptionsAndTags(
+                cid,
+                0,
+                cfNumbers as CFArray,
+                2,
+                &setTags,
+                &clearTags
+            )
+        else {
             return nil
         }
 
-        guard CFGetTypeID(resultCF) == CFDictionaryGetTypeID() else {
+        guard CFGetTypeID(resultCF) == CFArrayGetTypeID() else {
             NSLog(
-                "[ShakaPachi] SpacesEnumerator: CGSCopySpacesForWindows returned " + "unexpected CF type %lu",
+                "[ShakaPachi] SpacesEnumerator: CGSCopyWindowsWithOptionsAndTags returned "
+                    + "unexpected CF type %lu",
                 CFGetTypeID(resultCF))
             return nil
         }
-
-        // The dictionary maps CFNumber (window ID) → CFArray of CFNumber (space IDs).
-        guard let resultDict = resultCF as? [NSNumber: [NSNumber]] else {
-            // Try alternate casting paths sometimes returned by SkyLight.
-            guard let altDict = resultCF as? [NSNumber: Any] else {
-                return nil
-            }
-            var map: [CGWindowID: [Int]] = [:]
-            for (key, value) in altDict {
-                let wid = CGWindowID(key.uint32Value)
-                if let spaceArray = value as? [NSNumber] {
-                    map[wid] = spaceArray.map { $0.intValue }
-                }
-            }
-            return map.isEmpty ? nil : map
+        guard let numbers = resultCF as? [NSNumber] else {
+            return nil
         }
 
-        var map: [CGWindowID: [Int]] = [:]
-        for (key, value) in resultDict {
-            let wid = CGWindowID(key.uint32Value)
-            map[wid] = value.map { $0.intValue }
-        }
-        return map.isEmpty ? nil : map
+        let ids = Set(numbers.map { CGWindowID($0.uint32Value) })
+        return ids.isEmpty ? nil : ids
     }
 }
