@@ -10,12 +10,12 @@ import Foundation
 /// can be passed through NSLocalizedString at call sites if needed.
 enum UpdateError: LocalizedError {
     case networkError(Error)
-    case httpError(Int)         // HTTP status code other than 2xx
-    case noMatchingAsset        // no ShakaPachi-*.zip asset in the release
-    case parseError(String)     // JSON shape was not what we expected
-    case verifyFailed(String)   // code-signature verification rejected the bundle
+    case httpError(Int)  // HTTP status code other than 2xx
+    case noMatchingAsset  // no ShakaPachi-*.zip asset in the release
+    case parseError(String)  // JSON shape was not what we expected
+    case verifyFailed(String)  // code-signature verification rejected the bundle
     case installFailed(String)  // helper script or ditto failed
-    case notWritable            // destination path is not writable and auth was cancelled
+    case notWritable  // destination path is not writable and auth was cancelled
 
     var errorDescription: String? {
         switch self {
@@ -65,7 +65,7 @@ struct UpdateChecker {
         let notes = (root["body"] as? String) ?? ""
 
         guard let htmlURLString = root["html_url"] as? String,
-              let htmlURL = URL(string: htmlURLString)
+            let htmlURL = URL(string: htmlURLString)
         else {
             throw UpdateError.parseError("Missing or invalid 'html_url'")
         }
@@ -81,16 +81,18 @@ struct UpdateChecker {
         guard let assets = root["assets"] as? [[String: Any]] else {
             throw UpdateError.noMatchingAsset
         }
-        guard let asset = assets.first(where: {
-            guard let name = $0["name"] as? String else { return false }
-            return name.hasPrefix("ShakaPachi-") && name.hasSuffix(".zip")
-        }) else {
+        guard
+            let asset = assets.first(where: {
+                guard let name = $0["name"] as? String else { return false }
+                return name.hasPrefix("ShakaPachi-") && name.hasSuffix(".zip")
+            })
+        else {
             throw UpdateError.noMatchingAsset
         }
 
         guard let assetName = asset["name"] as? String,
-              let downloadURLString = asset["browser_download_url"] as? String,
-              let downloadURL = URL(string: downloadURLString)
+            let downloadURLString = asset["browser_download_url"] as? String,
+            let downloadURL = URL(string: downloadURLString)
         else {
             throw UpdateError.parseError("Asset is missing 'name' or 'browser_download_url'")
         }

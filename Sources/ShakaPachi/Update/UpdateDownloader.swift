@@ -32,8 +32,9 @@ struct UpdateDownloader {
         // Expected total from Content-Length header, falling back to assetSize from the API.
         let expectedBytes: Int64
         if let http = response as? HTTPURLResponse,
-           let lengthString = http.value(forHTTPHeaderField: "Content-Length"),
-           let length = Int64(lengthString) {
+            let lengthString = http.value(forHTTPHeaderField: "Content-Length"),
+            let length = Int64(lengthString)
+        {
             expectedBytes = length
         } else {
             expectedBytes = release.assetSize > 0 ? release.assetSize : 0

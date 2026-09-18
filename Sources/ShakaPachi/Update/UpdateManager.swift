@@ -18,10 +18,10 @@ final class UpdateManager {
         case checking
         case upToDate
         case available(ReleaseInfo)
-        case downloading(Double)    // 0.0...1.0
+        case downloading(Double)  // 0.0...1.0
         case verifying
         case installing
-        case failed(String)         // user-facing localized message
+        case failed(String)  // user-facing localized message
     }
 
     // MARK: - Singleton
@@ -62,7 +62,7 @@ final class UpdateManager {
 
     private enum DefaultsKey {
         static let autoCheckEnabled = "update.autoCheckEnabled"
-        static let lastCheck        = "update.lastCheck"
+        static let lastCheck = "update.lastCheck"
     }
 
     /// Whether the app should check for updates automatically.
