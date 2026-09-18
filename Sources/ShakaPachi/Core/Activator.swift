@@ -8,15 +8,20 @@
 // within a 2-point tolerance, and falls back to app-only activation when
 // neither produces a single confident match.
 //
-// Threading: AX calls are synchronous IPC. They must not run inside the
-// event-tap callback. The state machine wires the confirm action through
-// the main queue (onSwitcherInput runs on the main run loop), so activate() is
-// effectively always called on the main thread. The mandatory 50ms messaging
-// timeout bounds the worst-case block to ~50ms per AX call, which is
-// acceptable for v1 on the main thread. A dedicated background serial queue
-// would avoid any main-thread delay but would require marshalling the
-// panel.hide() back to main, complicating the control flow without a
-// measurable user benefit given the 50ms cap.
+// Threading: AX calls are synchronous IPC and must not block the main thread.
+// The event tap's run-loop source is attached to the main run loop and its
+// callback invokes onSwitcherInput synchronously to decide whether to consume
+// the key, so confirm reaches activate() from inside that callback: anything
+// blocking here stalls the whole system's input stream until the tap is
+// disabled by timeout. The AX work therefore runs on a private serial queue
+// and activate() returns immediately. Only NSRunningApplication.activate()
+// stays on the caller's thread — it is AppKit, it is cheap, and it is what
+// actually moves focus.
+//
+// The messaging timeout is per element, not per application: setting it on the
+// element returned by AXUIElementCreateApplication bounds only the calls made
+// on that element, so every window element read out of it is capped
+// individually before it is messaged.
 
 import AppKit
 import ApplicationServices
@@ -40,25 +45,44 @@ private func _AXUIElementGetWindow(
 @MainActor
 final class Activator {
 
+    /// Messaging timeout applied to every AX element this file talks to.
+    private static let messagingTimeout: Float = 0.05
+
+    /// Serial so two confirms in a row cannot interleave their AX work, and so a
+    /// slow app delays the next raise rather than the event tap.
+    private static let axQueue = DispatchQueue(label: "com.senkentarou.shakapachi.activator")
+
     // MARK: - Public entry point
 
     /// Raise `window` to the front using the Accessibility API.
+    ///
+    /// Returns as soon as the app is activated; the specific-window raise is
+    /// handed to a background queue because it is synchronous IPC and this is
+    /// called from inside the event-tap callback.
     func activate(_ window: WindowInfo) {
-        let pid = window.pid
-
         // Activate the app first so it is at least frontmost even if the
         // specific-window raise below falls back to app-only.
         // Why not activate(from:options:) (the macOS 14 replacement):
         // cooperative activation expects the yielding app to be active, which
         // a non-activating switcher panel never is — keep the legacy call
         // until the new path is verified to transfer focus on macOS 14+.
-        NSRunningApplication(processIdentifier: pid)?.activate()
+        NSRunningApplication(processIdentifier: window.pid)?.activate()
 
+        Activator.axQueue.async {
+            Activator.raise(window)
+        }
+    }
+
+    // MARK: - AX raise (off the main thread)
+
+    /// Find `window`'s AX element and raise it. Runs on `axQueue`.
+    private nonisolated static func raise(_ window: WindowInfo) {
+        let pid = window.pid
         let appElement = AXUIElementCreateApplication(pid)
 
         // Set the messaging timeout BEFORE any attribute read.
-        // This prevents an unresponsive app from freezing the switcher UI.
-        AXUIElementSetMessagingTimeout(appElement, 0.05)
+        // This prevents an unresponsive app from stalling the raise queue.
+        AXUIElementSetMessagingTimeout(appElement, messagingTimeout)
 
         // Copy the array of window AX elements.
         var rawValue: CFTypeRef?
@@ -72,6 +96,14 @@ final class Activator {
                 "[ShakaPachi] Activate: fallback – app activate only " + "(failed to read kAXWindowsAttribute, pid %d)",
                 pid)
             return
+        }
+
+        // The timeout set on appElement does not carry over to the elements read
+        // out of it, so cap each one before it is messaged below. Without this
+        // every per-window call falls back to the process-wide default, which is
+        // seconds long — an app that answers slowly then blocks this whole path.
+        for axWin in axWindows {
+            AXUIElementSetMessagingTimeout(axWin, messagingTimeout)
         }
 
         // Primary path: match the exact window by CGWindowID via the private
@@ -200,7 +232,7 @@ final class Activator {
     // MARK: - AX attribute marshalling (impure; stays outside the pure matcher)
 
     /// Read `kAXTitleAttribute` from an AX window element, returning "" on failure.
-    private func axTitle(of element: AXUIElement) -> String {
+    private nonisolated static func axTitle(of element: AXUIElement) -> String {
         var raw: CFTypeRef?
         guard
             AXUIElementCopyAttributeValue(
@@ -216,7 +248,7 @@ final class Activator {
     ///
     /// Both attributes carry `AXValue` wrappers around `CGPoint`/`CGSize`.
     /// Returns `.zero` when either attribute is unavailable.
-    private func axBounds(of element: AXUIElement) -> CGRect {
+    private nonisolated static func axBounds(of element: AXUIElement) -> CGRect {
         var posRaw: CFTypeRef?
         var sizeRaw: CFTypeRef?
 
