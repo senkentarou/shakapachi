@@ -82,6 +82,32 @@ final class WindowStore {
             bundleIDResolver: { [weak self] pid in self?.resolvedBundleID(for: pid) }
         )
 
+        // Drop the surfaces the owning app does not report as windows.  The
+        // attribute filters above cannot separate a browser's media or
+        // picture-in-picture overlay from a real window; the app's own AX
+        // window list can.
+        let beforeAXCrossCheck = filtered
+        filtered = WindowStore.filterToAXKnownWindows(
+            filtered,
+            axWindowIDs: { pid in AXWindowList.windowIDs(forPID: pid) }
+        )
+        // One line per app, so a row that went missing can be traced to this
+        // filter from the system log rather than from a debugger.  Summarised
+        // rather than logged per window because .optionAll hands this filter
+        // dozens of surfaces at once and NSLog runs on the show path.
+        if filtered.count != beforeAXCrossCheck.count {
+            let keptIDs = Set(filtered.map { $0.windowID })
+            var droppedPerApp: [String: Int] = [:]
+            for dropped in beforeAXCrossCheck where !keptIDs.contains(dropped.windowID) {
+                droppedPerApp[dropped.appName, default: 0] += 1
+            }
+            for (appName, count) in droppedPerApp.sorted(by: { $0.key < $1.key }) {
+                NSLog(
+                    "[ShakaPachi] WindowStore: dropped %d surface(s) of %@ – not in its AX window list",
+                    count, appName)
+            }
+        }
+
         // When enumerating all Spaces, apply the SkyLight-based Space filter to
         // remove off-Space compositing artefacts that .optionAll includes.
         // This is the upgrade over the previous ".optionAll | .optionOnScreenOnly"
@@ -275,6 +301,58 @@ final class WindowStore {
             grouped[key, default: []].append(window)
         }
         return order.flatMap { grouped[$0] ?? [] }
+    }
+
+    // MARK: - Pure AX cross-check (unit-testable without AX/TCC)
+
+    /// Return only the windows the owning app itself reports over the
+    /// Accessibility API, leaving apps that give no usable answer untouched.
+    ///
+    /// The layer / alpha / size / store-type filters in `filterAndBuild` describe
+    /// what a window looks like to the window server, and a browser's overlay
+    /// surfaces look exactly like one: Chrome's media bubble and its
+    /// picture-in-picture chrome are layer-0, fully opaque, larger than 40x40 and
+    /// backed by a store, so they enter the list as a second row for an app that
+    /// has one window.  They also vanish again once the overlay closes, which is
+    /// why the extra row is there on one invocation and gone on the next.
+    ///
+    /// The app's AX window list separates them, and it is the same list
+    /// `Activator` matches against — a window missing from it is one this app
+    /// can only app-activate, so the row it produces cannot do what the row
+    /// promises.
+    ///
+    /// Only apps contributing two or more windows are asked.  A single window is
+    /// the row its app gets either way, and `axWindowIDs` is synchronous IPC on
+    /// the show path, so the cost is paid only where the ambiguity is.
+    ///
+    /// - Parameters:
+    ///   - windows: The attribute-filtered snapshot.
+    ///   - axWindowIDs: Window IDs the given pid reports over AX, or nil when it
+    ///     gave no usable answer.  nil keeps that app's windows as they are.
+    /// - Returns: `windows` minus the surfaces AX did not report.  An answer that
+    ///   would remove every window of an app is discarded instead: an AX view
+    ///   contradicting every CGWindowList entry is the view that is wrong.
+    nonisolated static func filterToAXKnownWindows(
+        _ windows: [WindowInfo],
+        axWindowIDs: (pid_t) -> Set<CGWindowID>?
+    ) -> [WindowInfo] {
+        var windowCount: [pid_t: Int] = [:]
+        for window in windows {
+            windowCount[window.pid, default: 0] += 1
+        }
+
+        var trusted: [pid_t: Set<CGWindowID>] = [:]
+        for (pid, count) in windowCount where count >= 2 {
+            guard let ids = axWindowIDs(pid) else { continue }
+            let survivors = windows.contains { $0.pid == pid && ids.contains($0.windowID) }
+            if survivors { trusted[pid] = ids }
+        }
+        guard !trusted.isEmpty else { return windows }
+
+        return windows.filter { window in
+            guard let ids = trusted[window.pid] else { return true }
+            return ids.contains(window.windowID)
+        }
     }
 
     // MARK: - Pure MRU helpers (unit-testable without AppKit/CGWindowList)
