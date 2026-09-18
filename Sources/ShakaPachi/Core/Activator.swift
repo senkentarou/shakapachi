@@ -46,7 +46,8 @@ private func _AXUIElementGetWindow(
 final class Activator {
 
     /// Messaging timeout applied to every AX element this file talks to.
-    private static let messagingTimeout: Float = 0.05
+    /// nonisolated because raise() reads it off the main actor.
+    private nonisolated static let messagingTimeout: Float = 0.05
 
     /// Serial so two confirms in a row cannot interleave their AX work, and so a
     /// slow app delays the next raise rather than the event tap.
