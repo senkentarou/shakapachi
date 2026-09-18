@@ -19,10 +19,10 @@ struct SemanticVersion: Comparable, CustomStringConvertible, Equatable {
         let raw = string.hasPrefix("v") ? String(string.dropFirst()) : string
         let parts = raw.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3,
-              let maj = Int(parts[0]),
-              let min = Int(parts[1]),
-              let pat = Int(parts[2]),
-              maj >= 0, min >= 0, pat >= 0
+            let maj = Int(parts[0]),
+            let min = Int(parts[1]),
+            let pat = Int(parts[2]),
+            maj >= 0, min >= 0, pat >= 0
         else { return nil }
         major = maj
         minor = min
@@ -43,12 +43,12 @@ struct SemanticVersion: Comparable, CustomStringConvertible, Equatable {
 /// All metadata about a single GitHub release that the update pipeline needs.
 struct ReleaseInfo: Equatable {
     let version: SemanticVersion
-    let tagName: String         // e.g. "v1.1.0"
-    let name: String?           // release title — may be nil or empty
-    let notes: String           // release body markdown/plain text (may be "")
-    let htmlURL: URL            // the GitHub release page URL
-    let downloadURL: URL        // browser_download_url for the ShakaPachi-*.zip asset
-    let assetName: String       // e.g. "ShakaPachi-1.1.0.zip"
+    let tagName: String  // e.g. "v1.1.0"
+    let name: String?  // release title — may be nil or empty
+    let notes: String  // release body markdown/plain text (may be "")
+    let htmlURL: URL  // the GitHub release page URL
+    let downloadURL: URL  // browser_download_url for the ShakaPachi-*.zip asset
+    let assetName: String  // e.g. "ShakaPachi-1.1.0.zip"
     let assetSize: Int64
     let publishedAt: Date?
 }
@@ -59,9 +59,9 @@ struct ReleaseInfo: Equatable {
 /// pulls them from one place instead of repeating literal strings.
 enum UpdateConfig {
     static let repoOwner = "senkentarou"
-    static let repoName  = "shakapachi"
+    static let repoName = "shakapachi"
     /// Team ID of the Developer ID certificate used to sign and notarize releases.
-    static let teamID    = "U2H8U2TN85"
+    static let teamID = "U2H8U2TN85"
     static let latestReleaseURL = URL(
         string: "https://api.github.com/repos/senkentarou/shakapachi/releases/latest"
     )!

@@ -89,21 +89,21 @@ final class UpdateCheckerTests: XCTestCase {
     /// A realistic minimal GitHub /releases/latest payload containing a
     /// ShakaPachi-1.1.0.zip asset.
     private let fixtureJSON = """
-    {
-      "tag_name": "v1.1.0",
-      "name": "ShakaPachi 1.1.0",
-      "body": "## What's new\\n- Auto-update support",
-      "html_url": "https://github.com/senkentarou/shakapachi/releases/tag/v1.1.0",
-      "published_at": "2026-06-01T12:00:00Z",
-      "assets": [
         {
-          "name": "ShakaPachi-1.1.0.zip",
-          "browser_download_url": "https://github.com/senkentarou/shakapachi/releases/download/v1.1.0/ShakaPachi-1.1.0.zip",
-          "size": 12345678
+          "tag_name": "v1.1.0",
+          "name": "ShakaPachi 1.1.0",
+          "body": "## What's new\\n- Auto-update support",
+          "html_url": "https://github.com/senkentarou/shakapachi/releases/tag/v1.1.0",
+          "published_at": "2026-06-01T12:00:00Z",
+          "assets": [
+            {
+              "name": "ShakaPachi-1.1.0.zip",
+              "browser_download_url": "https://github.com/senkentarou/shakapachi/releases/download/v1.1.0/ShakaPachi-1.1.0.zip",
+              "size": 12345678
+            }
+          ]
         }
-      ]
-    }
-    """
+        """
 
     func testParseLatestRelease_version() throws {
         let data = fixtureJSON.data(using: .utf8)!
@@ -154,21 +154,21 @@ final class UpdateCheckerTests: XCTestCase {
 
     func testParseLatestRelease_throwsWhenNoMatchingAsset() {
         let json = """
-        {
-          "tag_name": "v1.1.0",
-          "name": "ShakaPachi 1.1.0",
-          "body": "",
-          "html_url": "https://github.com/senkentarou/shakapachi/releases/tag/v1.1.0",
-          "published_at": "2026-06-01T12:00:00Z",
-          "assets": [
             {
-              "name": "SomeOtherFile.dmg",
-              "browser_download_url": "https://example.com/SomeOtherFile.dmg",
-              "size": 999
+              "tag_name": "v1.1.0",
+              "name": "ShakaPachi 1.1.0",
+              "body": "",
+              "html_url": "https://github.com/senkentarou/shakapachi/releases/tag/v1.1.0",
+              "published_at": "2026-06-01T12:00:00Z",
+              "assets": [
+                {
+                  "name": "SomeOtherFile.dmg",
+                  "browser_download_url": "https://example.com/SomeOtherFile.dmg",
+                  "size": 999
+                }
+              ]
             }
-          ]
-        }
-        """
+            """
         let data = json.data(using: .utf8)!
         XCTAssertThrowsError(try UpdateChecker.parseLatestRelease(from: data)) { error in
             guard case UpdateError.noMatchingAsset = error else {
@@ -180,21 +180,21 @@ final class UpdateCheckerTests: XCTestCase {
 
     func testParseLatestRelease_throwsWhenTagIsUnparseable() {
         let json = """
-        {
-          "tag_name": "not-a-version",
-          "name": "Bad Release",
-          "body": "",
-          "html_url": "https://github.com/senkentarou/shakapachi/releases/tag/bad",
-          "published_at": null,
-          "assets": [
             {
-              "name": "ShakaPachi-1.1.0.zip",
-              "browser_download_url": "https://example.com/ShakaPachi-1.1.0.zip",
-              "size": 100
+              "tag_name": "not-a-version",
+              "name": "Bad Release",
+              "body": "",
+              "html_url": "https://github.com/senkentarou/shakapachi/releases/tag/bad",
+              "published_at": null,
+              "assets": [
+                {
+                  "name": "ShakaPachi-1.1.0.zip",
+                  "browser_download_url": "https://example.com/ShakaPachi-1.1.0.zip",
+                  "size": 100
+                }
+              ]
             }
-          ]
-        }
-        """
+            """
         let data = json.data(using: .utf8)!
         XCTAssertThrowsError(try UpdateChecker.parseLatestRelease(from: data)) { error in
             guard case UpdateError.parseError = error else {

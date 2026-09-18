@@ -138,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .upToDate, .idle:
                 self?.statusItemController?.setUpdateAvailable(nil)
             default:
-                break   // keep badge visible during download / verify / install / failed
+                break  // keep badge visible during download / verify / install / failed
             }
             self?.updateWindow?.apply(status)
         }

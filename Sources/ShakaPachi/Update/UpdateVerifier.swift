@@ -99,9 +99,9 @@ struct UpdateVerifier {
         var cfError: Unmanaged<CFError>?
         let checkStatus = SecStaticCodeCheckValidityWithErrors(
             staticCode,
-            SecCSFlags(rawValue:
-                kSecCSCheckAllArchitectures |
-                kSecCSCheckNestedCode
+            SecCSFlags(
+                rawValue:
+                    kSecCSCheckAllArchitectures | kSecCSCheckNestedCode
             ),
             requirement,
             &cfError
@@ -116,9 +116,9 @@ struct UpdateVerifier {
         // indicate a packaging error or a confused update flow.
         let infoPlistURL = appURL.appendingPathComponent("Contents/Info.plist")
         guard let infoPlistData = try? Data(contentsOf: infoPlistURL),
-              let plist = try? PropertyListSerialization.propertyList(from: infoPlistData, format: nil)
-                  as? [String: Any],
-              let bundleVersionString = plist["CFBundleShortVersionString"] as? String
+            let plist = try? PropertyListSerialization.propertyList(from: infoPlistData, format: nil)
+                as? [String: Any],
+            let bundleVersionString = plist["CFBundleShortVersionString"] as? String
         else {
             throw UpdateError.verifyFailed("Cannot read CFBundleShortVersionString from extracted bundle")
         }

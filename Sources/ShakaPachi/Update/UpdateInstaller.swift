@@ -9,8 +9,8 @@
 //   caller terminate the app. The script polls until the old PID is gone, swaps
 //   the bundles with ditto, and relaunches the new version.
 
-import Foundation
 import AppKit
+import Foundation
 
 struct UpdateInstaller {
 
@@ -35,19 +35,19 @@ struct UpdateInstaller {
         //   If authorization is cancelled it reveals the verified .app for manual install
         //   rather than silently failing — the user still gets their update.
         let scriptContent = """
-        #!/bin/sh
-        OLD_PID="$1"; NEW_APP="$2"; DEST="$3"; NEED_ADMIN="$4"
-        while kill -0 "$OLD_PID" 2>/dev/null; do sleep 0.2; done
-        if [ "$NEED_ADMIN" = "1" ]; then
-          if ! osascript -e "do shell script \\"rm -rf '$DEST' && /usr/bin/ditto '$NEW_APP' '$DEST' && chown -R $(id -un) '$DEST'\\" with administrator privileges"; then
-            open -R "$NEW_APP"
-            exit 1
-          fi
-        else
-          rm -rf "$DEST" && /usr/bin/ditto "$NEW_APP" "$DEST" || { open -R "$NEW_APP"; exit 1; }
-        fi
-        open "$DEST"
-        """
+            #!/bin/sh
+            OLD_PID="$1"; NEW_APP="$2"; DEST="$3"; NEED_ADMIN="$4"
+            while kill -0 "$OLD_PID" 2>/dev/null; do sleep 0.2; done
+            if [ "$NEED_ADMIN" = "1" ]; then
+              if ! osascript -e "do shell script \\"rm -rf '$DEST' && /usr/bin/ditto '$NEW_APP' '$DEST' && chown -R $(id -un) '$DEST'\\" with administrator privileges"; then
+                open -R "$NEW_APP"
+                exit 1
+              fi
+            else
+              rm -rf "$DEST" && /usr/bin/ditto "$NEW_APP" "$DEST" || { open -R "$NEW_APP"; exit 1; }
+            fi
+            open "$DEST"
+            """
 
         let helperDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShakaPachi-Helper-\(UUID().uuidString)", isDirectory: true)
@@ -71,7 +71,7 @@ struct UpdateInstaller {
             String(pid),
             newApp.path,
             destApp.path,
-            needAdmin ? "1" : "0"
+            needAdmin ? "1" : "0",
         ]
 
         // Launch detached — do NOT wait. The helper keeps running after we exit.
