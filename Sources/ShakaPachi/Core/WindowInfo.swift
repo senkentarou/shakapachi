@@ -4,7 +4,7 @@ import Foundation
 // WindowInfo is the pure value model for a single on-screen window.
 // All fields are resolved at enumeration time; the UI layer consumes this
 // struct directly without touching CGWindowList or NSRunningApplication.
-struct WindowInfo: Equatable {
+struct WindowInfo: Equatable, Sendable {
     let windowID: CGWindowID
     let pid: pid_t
     let bundleID: String?

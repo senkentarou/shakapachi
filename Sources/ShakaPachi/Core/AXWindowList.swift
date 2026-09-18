@@ -11,9 +11,12 @@
 // Activator matches against: a surface missing from it cannot be raised, only
 // app-activated.
 //
-// Threading: AX calls are synchronous IPC, so every call here is bounded by an
-// explicit messaging timeout and it is the caller's job to query as few apps
-// as possible — see WindowStore.filterToAXKnownWindows.
+// Threading: AX calls are synchronous IPC and this runs on the show path, so
+// every element messaged here is capped by an explicit messaging timeout and it
+// is the caller's job to query as few apps as possible — see
+// WindowStore.filterToAXKnownWindows. The timeout is per element, not per
+// application: capping the element from AXUIElementCreateApplication does not
+// cap the window elements read out of it.
 
 import ApplicationServices
 import CoreGraphics
@@ -65,6 +68,10 @@ enum AXWindowList {
 
         var ids: Set<CGWindowID> = []
         for axWindow in axWindows {
+            // Cap this element too: the timeout on appElement does not reach it,
+            // so without this the lookup below waits out the process-wide
+            // default instead of `timeout`.
+            AXUIElementSetMessagingTimeout(axWindow, timeout)
             var windowID: CGWindowID = 0
             if _AXUIElementGetWindow(axWindow, &windowID) == .success {
                 ids.insert(windowID)

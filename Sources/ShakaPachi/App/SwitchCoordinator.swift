@@ -39,11 +39,14 @@ import AppKit
 // handleInput is invoked synchronously from inside the event-tap callback,
 // which runs on the main run loop and must return within a very tight budget
 // (no blocking work, no unbounded loops). Everything here is either a cheap
-// pure state-machine call or a panel display request that only posts a redraw
-// — no blocking I/O. The one exception, an optional user-configured show delay,
-// is dispatched asynchronously so the callback still returns immediately. The
-// boolean return value tells the tap whether to consume the key event (swallow
-// it) or let it pass through to the front app.
+// pure state-machine call or a panel display request that only posts a redraw.
+// Two things are not: the optional user-configured show delay, which is
+// dispatched asynchronously, and the window raise on confirm, which Activator
+// hands to its own queue. What remains synchronous is the enumerate() on the
+// show transition — the machine needs the item count to decide the transition,
+// so its AX cross-check cannot be deferred and is bounded by a messaging
+// timeout instead. The boolean return value tells the tap whether to consume
+// the key event (swallow it) or let it pass through to the front app.
 
 @MainActor
 final class SwitchCoordinator {
