@@ -11,6 +11,13 @@
 // Activator matches against: a surface missing from it cannot be raised, only
 // app-activated.
 //
+// Membership alone is not the whole answer, because an app also puts its own
+// chrome in that list: Chrome reports the "Global Media Controls" bubble it
+// opens over a playing tab as an AX window, at layer 0, the same size range as
+// a real window and with an empty CGWindowList name. What separates them is
+// the subrole the app attaches — AXStandardWindow for the browser window,
+// AXUnknown for the bubble — so the list is read through that filter.
+//
 // Threading: AX calls are synchronous IPC and this runs on the show path, so
 // every element messaged here is capped by an explicit messaging timeout and it
 // is the caller's job to query as few apps as possible — see
@@ -39,9 +46,10 @@ enum AXWindowList {
     /// and 50ms is what this codebase already accepts as the worst case.
     static let defaultTimeout: Float = 0.05
 
-    /// The CGWindowIDs `pid` reports over the Accessibility API, or nil when the
-    /// app gives no usable answer (AX denied, app unresponsive, no windows
-    /// attribute, no element resolved to a window ID).
+    /// The CGWindowIDs `pid` reports over the Accessibility API as windows the
+    /// user switches to, or nil when the app gives no usable answer (AX denied,
+    /// app unresponsive, no windows attribute, no element resolved to a window
+    /// ID, nothing left after the subrole filter).
     ///
     /// nil means "no opinion", never "this app has no windows" — a caller that
     /// treats nil as an empty set would erase every window of an app whose AX
@@ -72,11 +80,49 @@ enum AXWindowList {
             // so without this the lookup below waits out the process-wide
             // default instead of `timeout`.
             AXUIElementSetMessagingTimeout(axWindow, timeout)
+            guard isSwitchable(subrole: subrole(of: axWindow)) else { continue }
             var windowID: CGWindowID = 0
             if _AXUIElementGetWindow(axWindow, &windowID) == .success {
                 ids.insert(windowID)
             }
         }
         return ids.isEmpty ? nil : ids
+    }
+
+    // MARK: - Subrole (pure, unit-testable)
+
+    /// Subroles a window has to carry to earn a row in the switcher.
+    ///
+    /// `AXStandardWindow` is the ordinary document or browser window.
+    /// `AXDialog` is both a real dialog and what a minimized window reports in
+    /// place of its usual subrole, so leaving it out would drop minimized rows.
+    nonisolated static let switchableSubroles: Set<String> = [
+        kAXStandardWindowSubrole,
+        kAXDialogSubrole,
+    ]
+
+    /// Whether a window carrying `subrole` is one the user switches to.
+    ///
+    /// A subrole outside the allowlist marks a surface the app draws for itself
+    /// — Chrome's media bubble reports `AXUnknown` — which is on screen as long
+    /// as the UI it belongs to is open and disappears with it. That is the row
+    /// that comes and goes on consecutive invocations.
+    ///
+    /// A missing subrole is no answer rather than a denial, and is kept: an app
+    /// that reports none at all would otherwise lose every row it has.
+    nonisolated static func isSwitchable(subrole: String?) -> Bool {
+        guard let subrole else { return true }
+        return switchableSubroles.contains(subrole)
+    }
+
+    /// The subrole an app attaches to one of its AX windows, or nil when it
+    /// attaches none.
+    private nonisolated static func subrole(of axWindow: AXUIElement) -> String? {
+        var rawValue: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(
+                axWindow, kAXSubroleAttribute as CFString, &rawValue) == .success
+        else { return nil }
+        return rawValue as? String
     }
 }
