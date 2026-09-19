@@ -82,10 +82,10 @@ final class WindowStore {
             bundleIDResolver: { [weak self] pid in self?.resolvedBundleID(for: pid) }
         )
 
-        // Drop the surfaces the owning app does not report as windows.  The
-        // attribute filters above cannot separate a browser's media or
-        // picture-in-picture overlay from a real window; the app's own AX
-        // window list can.
+        // Drop the surfaces the owning app does not report as windows the user
+        // switches to.  The attribute filters above cannot separate a browser's
+        // media or picture-in-picture overlay from a real window; the app's own
+        // AX window list, read through the subrole it attaches, can.
         let beforeAXCrossCheck = filtered
         filtered = WindowStore.filterToAXKnownWindows(
             filtered,
@@ -103,7 +103,7 @@ final class WindowStore {
             }
             for (appName, count) in droppedPerApp.sorted(by: { $0.key < $1.key }) {
                 NSLog(
-                    "[ShakaPachi] WindowStore: dropped %d surface(s) of %@ – not in its AX window list",
+                    "[ShakaPachi] WindowStore: dropped %d surface(s) of %@ – not a window in its AX list",
                     count, appName)
             }
         }
@@ -316,10 +316,12 @@ final class WindowStore {
     /// has one window.  They also vanish again once the overlay closes, which is
     /// why the extra row is there on one invocation and gone on the next.
     ///
-    /// The app's AX window list separates them, and it is the same list
-    /// `Activator` matches against — a window missing from it is one this app
-    /// can only app-activate, so the row it produces cannot do what the row
-    /// promises.
+    /// The app's AX window list separates them, though membership in it is not
+    /// enough on its own: Chrome reports its media bubble there too, and what
+    /// marks it as chrome rather than a window is the subrole (`AXUnknown`
+    /// against the browser window's `AXStandardWindow`).  `AXWindowList` reads
+    /// the list through that filter, so `axWindowIDs` answers with the windows
+    /// the app itself treats as windows.
     ///
     /// Only apps contributing two or more windows are asked.  A single window is
     /// the row its app gets either way, and `axWindowIDs` is synchronous IPC on
@@ -327,8 +329,9 @@ final class WindowStore {
     ///
     /// - Parameters:
     ///   - windows: The attribute-filtered snapshot.
-    ///   - axWindowIDs: Window IDs the given pid reports over AX, or nil when it
-    ///     gave no usable answer.  nil keeps that app's windows as they are.
+    ///   - axWindowIDs: Window IDs the given pid reports over AX as windows the
+    ///     user switches to, or nil when it gave no usable answer.  nil keeps
+    ///     that app's windows as they are.
     /// - Returns: `windows` minus the surfaces AX did not report.  An answer that
     ///   would remove every window of an app is discarded instead: an AX view
     ///   contradicting every CGWindowList entry is the view that is wrong.
