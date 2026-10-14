@@ -12,8 +12,9 @@ final class LanguageSettingsTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeSuite(name: String = #function) -> (UserDefaults, String, Settings) {
-        let suiteName = "com.shakapachi.tests.LanguageSettingsTests.\(name).\(UUID().uuidString)"
+        let suiteName = "com.shakapachi.tests.LanguageSettingsTests.\(name)"
         let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
         let settings = Settings(defaults: defaults)
         addTeardownBlock {
             defaults.removePersistentDomain(forName: suiteName)

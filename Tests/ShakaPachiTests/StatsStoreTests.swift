@@ -2,9 +2,8 @@
 // Verifies: first record, accumulation on the same day, day-rollover resets
 // todayCount while total keeps climbing, and cross-instance persistence.
 //
-// Each test injects a fresh UserDefaults suite (unique name) to stay isolated
-// from other tests and from UserDefaults.standard. The suite is removed in
-// teardown so the filesystem stays clean.
+// Each test injects its own UserDefaults suite, emptied in setUp and teardown,
+// to stay isolated from other tests and from UserDefaults.standard.
 
 import XCTest
 
@@ -25,8 +24,9 @@ final class StatsStoreTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        suiteName = "com.shakapachi.tests.StatsStoreTests.\(UUID().uuidString)"
+        suiteName = "com.shakapachi.tests.StatsStoreTests.\(NSStringFromSelector(invocation!.selector))"
         defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
     }
 
     override func tearDown() async throws {
