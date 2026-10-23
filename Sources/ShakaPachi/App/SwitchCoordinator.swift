@@ -84,6 +84,11 @@ final class SwitchCoordinator {
     // on screen (the setting could change mid-session otherwise).
     private var lastPreviewEnabled = false
 
+    // Polls the trigger modifier while the panel is up. The tap misses the
+    // release when the system disables it for a slow callback, which leaves
+    // the machine active and the panel on screen with no key left to end it.
+    private var releaseWatchdog: Timer?
+
     // MARK: - Init
 
     /// - Parameters:
@@ -215,7 +220,8 @@ final class SwitchCoordinator {
             // is visible in the log.
             let delayMs = showDelay
             let present: (Int) -> Void = { [weak self] delayed in
-                guard let self else { return }
+                // A release inside the show delay has already confirmed.
+                guard let self, self.machine.isActive else { return }
                 let panel = self.switcherPanel
                 if isGrouped {
                     self.renderAppGrouped(orderFront: true)
@@ -225,6 +231,7 @@ final class SwitchCoordinator {
                         previewEnabled: previewEnabled)
                 }
                 panel.displayIfNeeded()
+                self.startReleaseWatchdog()
                 let n1 = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
                 if delayed > 0 {
                     NSLog(
@@ -289,10 +296,12 @@ final class SwitchCoordinator {
                     index, infos.count)
             }
             groupedSelection = nil
+            stopReleaseWatchdog()
             panel.hide()
 
         case .cancel:
             groupedSelection = nil
+            stopReleaseWatchdog()
             panel.hide()
         }
 
@@ -367,6 +376,35 @@ final class SwitchCoordinator {
             focusRow: selection.focusRow,
             previewEnabled: lastPreviewEnabled,
             orderFront: orderFront)
+    }
+
+    // MARK: - Release watchdog
+
+    private func startReleaseWatchdog() {
+        stopReleaseWatchdog()
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.confirmIfModifierReleased()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        releaseWatchdog = timer
+    }
+
+    private func stopReleaseWatchdog() {
+        releaseWatchdog?.invalidate()
+        releaseWatchdog = nil
+    }
+
+    private func confirmIfModifierReleased() {
+        guard machine.isActive else {
+            stopReleaseWatchdog()
+            return
+        }
+        let flags = CGEventSource.flagsState(.combinedSessionState).rawValue
+        guard flags & Settings.shared.triggerModifier.eventFlagMask == 0 else { return }
+        NSLog("[ShakaPachi] Trigger modifier released without a tap event — confirming")
+        _ = handleInput(.modifierUp, t0: CFAbsoluteTimeGetCurrent())
     }
 
     // MARK: - Helpers
